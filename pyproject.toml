@@ -7,6 +7,9 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
+psycopg = "^3.2.4"
+openai = "^1.63.0"
+numpy = "^2.2.3"
 
 
 [build-system]
