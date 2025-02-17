@@ -1,12 +1,12 @@
 [tool.poetry]
 name = "pgvector-storage"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["kirin <kirin.chen1001@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = ">=3.11,<3.13"
 psycopg = "^3.2.4"
 openai = "^1.63.0"
 numpy = "^2.2.3"
