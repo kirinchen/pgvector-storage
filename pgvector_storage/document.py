@@ -1,9 +1,6 @@
-from dataclasses import dataclass
-from typing import Dict, Optional
-
-
-@dataclass
 class Document:
-    id: str
-    content: str
-    metadata: Optional[Dict] = None
+
+    def __init__(self, uid: str, content: str, metadata: dict = None):
+        self.uid = uid
+        self.content = content
+        self.metadata = metadata if metadata else {}

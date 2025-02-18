@@ -36,7 +36,7 @@ class PgvectorStorageDao:
                 conn.commit()
         print(f"Table '{self.table_name}' created (if not exists).")
 
-    def save_documents(self, doc_iterator: Iterator[Document]):
+    def save_documents(self, doc_iterator: Iterator[Document], batch_size=128):
         """Stores documents with embeddings into PostgreSQL."""
         insert_query = f"""
         INSERT INTO public.{self.table_name} (id, text, metadata, embedding)
@@ -47,13 +47,23 @@ class PgvectorStorageDao:
             embedding = EXCLUDED.embedding;
         """
 
+        batch = []
+
         with psycopg.connect(self.connect_string) as conn:
             with conn.cursor() as cur:
                 for doc in doc_iterator:
                     metadata_json = json.dumps(doc.metadata) if doc.metadata else None
                     embedding = self.generate_embedding(doc.content)  # Implement this method
-                    cur.execute(insert_query, (doc.id, doc.content, metadata_json, embedding))
-            conn.commit()
+                    batch.append((doc.uid, doc.content, metadata_json, embedding))
+
+                    if len(batch) >= batch_size:
+                        cur.executemany(insert_query, batch)
+                        conn.commit()
+                        batch.clear()
+
+                if batch:  # Insert any remaining records
+                    cur.executemany(insert_query, batch)
+                    conn.commit()
         print("Documents stored successfully!")
 
     def generate_embedding(self, text: str) -> List[float]:
@@ -71,11 +81,11 @@ if __name__ == '__main__':
     from pathlib import Path
 
     documents = [
-        Document(id=comm_utils.random_chars(12), content="Elephants are the largest land animals.",
+        Document(uid=comm_utils.random_chars(12), content="Elephants are the largest land animals.",
                  metadata={"source": "wildlife"}),
-        Document(id=comm_utils.random_chars(12), content="Climate change affects global temperatures.",
+        Document(uid=comm_utils.random_chars(12), content="Climate change affects global temperatures.",
                  metadata={"source": "science"}),
-        Document(id=comm_utils.random_chars(12), content="bazar is a 150kg, 230cm tall polar bear",
+        Document(uid=comm_utils.random_chars(12), content="bazar is a 150kg, 230cm tall polar bear",
                  metadata={"source": "books"})
     ]
 
@@ -86,7 +96,7 @@ if __name__ == '__main__':
         c_str = env_utils.env('PGVECTOR_TEST_CONNECTION')
         dao = PgvectorStorageDao(connect_string=c_str, table_name='test_kirin')
         dao.create_table()
-        dao.save_documents(iter(documents))
+        dao.save_documents(iter(documents),2)
         print('Created table done and set data')
 
 
