@@ -23,3 +23,16 @@ def gen_insert_all_template(table_name: str) -> str:
         embedding = EXCLUDED.embedding;
     """
     return insert_query
+
+
+def gen_exist_by_id(table_name: str) -> str:
+    check_query = f"SELECT id FROM public.{table_name} WHERE id = %s"
+    return check_query
+
+
+def gen_update(table_name: str) -> str:
+    return f"""
+                    UPDATE public.{table_name}
+                    SET text = %s, metadata = %s, embedding = %s
+                    WHERE id = %s;
+                """
