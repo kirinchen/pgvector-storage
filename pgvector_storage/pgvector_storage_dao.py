@@ -5,10 +5,9 @@ import openai
 import psycopg
 from py_common_utility.utils import env_utils, comm_utils
 
-from pgvector_storage.document import Document
-
-EMBEDDING_MODEL = "text-embedding-ada-002"
-EMBEDDING_DIM = 1536  # Change if using a different model
+from pgvector_storage import sql_syntax
+from pgvector_storage.constant import EMBEDDING_MODEL, EMBEDDING_DIM
+from pgvector_storage.document import Document, DocEntity
 
 
 class PgvectorStorageDao:
@@ -20,16 +19,7 @@ class PgvectorStorageDao:
             setattr(self, fn, kwargs.get(fn, None))
 
     def create_table(self):
-        """Creates a table for storing documents and embeddings in pgvector."""
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS public.{self.table_name} (
-            id VARCHAR(128) PRIMARY KEY, 
-            text TEXT NOT NULL,
-            metadata JSONB,
-            embedding VECTOR({EMBEDDING_DIM})  -- Embedding dimension
-        );
-        """
-        # Async PostgreSQL connection
+        create_table_query = sql_syntax.gen_create_table(self.table_name)
         with psycopg.connect(self.connect_string) as conn:
             with conn.cursor() as cur:
                 cur.execute(create_table_query)
@@ -37,34 +27,34 @@ class PgvectorStorageDao:
         print(f"Table '{self.table_name}' created (if not exists).")
 
     def save_documents(self, doc_iterator: Iterator[Document], batch_size=128):
-        """Stores documents with embeddings into PostgreSQL."""
-        insert_query = f"""
-        INSERT INTO public.{self.table_name} (id, text, metadata, embedding)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (id) DO UPDATE 
-        SET text = EXCLUDED.text, 
-            metadata = EXCLUDED.metadata,
-            embedding = EXCLUDED.embedding;
-        """
+        insert_query = sql_syntax.gen_insert_all_template(self.table_name)
 
-        batch = []
+        batch: List[DocEntity] = []
 
         with psycopg.connect(self.connect_string) as conn:
             with conn.cursor() as cur:
                 for doc in doc_iterator:
                     metadata_json = json.dumps(doc.metadata) if doc.metadata else None
                     embedding = self.generate_embedding(doc.content)  # Implement this method
-                    batch.append((doc.uid, doc.content, metadata_json, embedding))
-
+                    entity = DocEntity(uid=doc.uid, metadata_json=metadata_json, embedding=embedding,
+                                       content=doc.content)
+                    batch.append(entity)
                     if len(batch) >= batch_size:
-                        cur.executemany(insert_query, batch)
+                        self.insert_all(cur, batch)
                         conn.commit()
                         batch.clear()
 
                 if batch:  # Insert any remaining records
-                    cur.executemany(insert_query, batch)
+                    self.insert_all(cur, batch)
                     conn.commit()
         print("Documents stored successfully!")
+
+    def insert_all(self, cur: any, doc_list: List[DocEntity]):
+        insert_query = sql_syntax.gen_insert_all_template(self.table_name)
+        batch = []
+        for doc in doc_list:
+            batch.append((doc.uid, doc.content, doc.metadata_json, doc.embedding))
+        cur.executemany(insert_query, batch)
 
     def generate_embedding(self, text: str) -> List[float]:
         """Generates an embedding for a given text (Dummy Implementation)."""
@@ -77,7 +67,6 @@ class PgvectorStorageDao:
 
 if __name__ == '__main__':
     import main
-    import asyncio
     from pathlib import Path
 
     documents = [
@@ -86,18 +75,13 @@ if __name__ == '__main__':
         Document(uid=comm_utils.random_chars(12), content="Climate change affects global temperatures.",
                  metadata={"source": "science"}),
         Document(uid=comm_utils.random_chars(12), content="bazar is a 150kg, 230cm tall polar bear",
-                 metadata={"source": "books"})
+                 metadata={"source": "books"}),
     ]
 
-
-    async def m_task():
-        base_dir = Path(main.__file__).parent
-        env_utils.load_env(env_dir_path=str(base_dir))
-        c_str = env_utils.env('PGVECTOR_TEST_CONNECTION')
-        dao = PgvectorStorageDao(connect_string=c_str, table_name='test_kirin')
-        dao.create_table()
-        dao.save_documents(iter(documents),2)
-        print('Created table done and set data')
-
-
-    asyncio.run(m_task())
+    base_dir = Path(main.__file__).parent
+    env_utils.load_env(env_dir_path=str(base_dir))
+    c_str = env_utils.env('PGVECTOR_TEST_CONNECTION')
+    dao = PgvectorStorageDao(connect_string=c_str, table_name='test_kirin')
+    dao.create_table()
+    dao.save_documents(iter(documents), 2)
+    print('Created table done and set data')
